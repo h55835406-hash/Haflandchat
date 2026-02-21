@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Hafland Evolution 3.4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #ffffff; --text: #000000; --border: #f0f0f0; --glass: rgba(255, 255, 255, 0.98); }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding: 0; overflow: hidden; height: 100vh; -webkit-tap-highlight-color: transparent; }
+        
+        .glass-nav {
+            background: var(--glass); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-top: 1px solid var(--border);
+            z-index: 100; position: fixed; bottom: 0; left: 0; right: 0;
+            height: calc(95px + env(safe-area-inset-bottom)); display: flex; justify-content: space-around; align-items: flex-start;
+            padding-top: 12px; padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        .content-scroll { height: calc(100vh - 180px); overflow-y: auto; position: relative; z-index: 10; padding-bottom: 120px; }
+        .content-scroll::-webkit-scrollbar { display: none; }
+        
+        .btn-black { background: #000; color: #fff; transition: all 0.2s ease; }
+        .btn-black:active { transform: scale(0.95); }
+        
+        .msg-me { background: #000; color: #fff; border-radius: 20px 20px 4px 20px; }
+        .msg-them { background: #f3f4f6; color: #000; border-radius: 20px 20px 20px 4px; }
+        .msg-anon { background: #1a1a1a; color: #00ff00; border-radius: 20px; font-family: monospace; border: 1px dashed #333; box-shadow: 0 0 10px rgba(0,255,0,0.2); }
+        
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(10px); }
+        .console-box { background: #000; color: #0f0; font-family: 'Courier New', monospace; width: 100%; max-width: 500px; border-radius: 24px; padding: 24px; border: 1px solid #333; }
+        
+        .nick-gold { color: #ffd700; text-shadow: 0 0 5px rgba(255,215,0,0.5); font-weight: 900; }
+        .nick-neon { color: #00f2ff; text-shadow: 0 0 8px rgba(0,242,255,0.8); font-weight: 900; }
+        .nick-gradient { background: linear-gradient(90deg, #ff00cc, #3333ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 900; }
+
+        .nft-item { aspect-ratio: 1; border-radius: 1.5rem; overflow: hidden; position: relative; border: 2px solid #000; }
+        
+        /* Video Fix */
+        .video-container { position: relative; padding-bottom: 177.77%; height: 0; overflow: hidden; border-radius: 2rem; background: #000; }
+        .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    </style>
+</head>
+<body>
+    <div id="app" class="h-full flex flex-col relative bg-white">
+        <div class="h-full flex items-center justify-center">
+            <div class="w-8 h-8 border-4 border-black border-t-transparent rounded-full animate-spin"></div>
+        </div>
+    </div>
+
+    <div id="dev-console" class="modal-overlay hidden" style="z-index: 2000;">
+        <div class="console-box shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b border-zinc-800 pb-2">
+                <span class="text-[10px] font-black tracking-widest uppercase opacity-50">Hafland_OS Terminal</span>
+                <button onclick="toggleConsole()" class="text-white">✕</button>
+            </div>
+            <div id="console-output" class="h-64 overflow-y-auto text-[10px] mb-4 space-y-1 scrollbar-hide font-mono"></div>
+            <div class="flex gap-2">
+                <span class="text-green-500 font-bold">></span>
+                <input id="console-input" type="text" class="flex-1 bg-transparent text-green-400 text-sm outline-none font-mono" placeholder="Команда..." onkeypress="if(event.key==='Enter') runCommand()">
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc, increment, arrayUnion } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAkgC4melkEcj0pDywonPG3aAeE3vACoF0",
+            authDomain: "hafland-c8dc3.firebaseapp.com",
+            projectId: "hafland-c8dc3",
+            storageBucket: "hafland-c8dc3.firebasestorage.app",
+            messagingSenderId: "163991622474",
+            appId: "1:163991622474:web:06a7357e295c9a98b327b3"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const APP_ID = "hafland_v3_stable"; 
+
+        window.state = {
+            user: null, profile: null, tab: 'chats', subTab: 'users', chatMode: null, isGroup: false,
+            viewProfile: null, messages: [], users: [], statuses: [], groups: [],
+            starFlow: { stage: 'none' }, loading: false, anonMode: false,
+            initialized: false, nftMode: false, tempNft: null
+        };
+
+        onAuthStateChanged(auth, async (u) => {
+            if (u) {
+                window.state.user = u;
+                const savedNick = localStorage.getItem('haf_nick');
+                const savedPass = localStorage.getItem('haf_pass');
+                if(savedNick && savedPass) await autoLogin(savedNick, savedPass);
+                else { window.state.initialized = true; renderAuth(); }
+            } else { await signInAnonymously(auth); }
+        });
+
+        async function autoLogin(nick, pass) {
+            try {
+                const regRef = doc(db, 'artifacts', APP_ID, 'registry', nick.toLowerCase());
+                const regSnap = await getDoc(regRef);
+                if (regSnap.exists() && regSnap.data().pass === pass) initListeners(regSnap.data().uid);
+                else { window.state.initialized = true; renderAuth(); }
+            } catch(e) { window.state.initialized = true; renderAuth(); }
+        }
+
+        function initListeners(uid) {
+            onSnapshot(doc(db, 'artifacts', APP_ID, 'users', uid), (s) => {
+                if (s.exists()) { window.state.profile = s.data(); window.state.initialized = true; render(); }
+            });
+            onSnapshot(collection(db, 'artifacts', APP_ID, 'users'), (s) => {
+                window.state.users = s.docs.map(d => d.data()); render();
+            });
+            onSnapshot(collection(db, 'artifacts', APP_ID, 'messages'), (s) => {
+                window.state.messages = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.time - b.time); render();
+            });
+            onSnapshot(collection(db, 'artifacts', APP_ID, 'statuses'), (s) => {
+                window.state.statuses = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => b.time - a.time); render();
+            });
+            onSnapshot(collection(db, 'artifacts', APP_ID, 'groups'), (s) => {
+                window.state.groups = s.docs.map(d => ({id: d.id, ...d.data()})); render();
+            });
+        }
+
+        window.handleAuth = async (mode) => {
+            const nickInput = document.getElementById('a-nick').value.trim();
+            const nick = nickInput.toLowerCase();
+            const pass = document.getElementById('a-pass').value.trim();
+            if(!nick || !pass) return;
+            window.state.loading = true; renderAuth();
+            try {
+                const regRef = doc(db, 'artifacts', APP_ID, 'registry', nick);
+                const regSnap = await getDoc(regRef);
+                if (mode === 'reg') {
+                    if (regSnap.exists()) alert("Ник занят!");
+                    else {
+                        const profile = { 
+                            uid: auth.currentUser.uid, username: nick, pass, stars: 50, tag: 'USER', 
+                            nfts: [], avatar: null, premium: false, nickStyle: 'normal', customStatus: '', level: 1, xp: 0
+                        };
+                        await setDoc(regRef, { uid: auth.currentUser.uid, pass });
+                        await setDoc(doc(db, 'artifacts', APP_ID, 'users', auth.currentUser.uid), profile);
+                        localStorage.setItem('haf_nick', nick); localStorage.setItem('haf_pass', pass);
+                        initListeners(auth.currentUser.uid);
+                    }
+                } else {
+                    if (!regSnap.exists() || regSnap.data().pass !== pass) alert("Ошибка!");
+                    else { localStorage.setItem('haf_nick', nick); localStorage.setItem('haf_pass', pass); initListeners(regSnap.data().uid); }
+                }
+            } finally { window.state.loading = false; }
+        };
+
+        // МГНОВЕННАЯ ОТПРАВКА NFT
+        window.confirmNFT = async (targetUid) => {
+            const img = window.state.tempNft;
+            const from = window.state.profile.username;
+            const myUid = window.state.profile.uid;
+
+            // Закрываем модалку сразу для мгновенного отклика
+            window.state.nftMode = false;
+            window.state.tempNft = null;
+            render(); 
+            
+            try {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'users', myUid), { stars: increment(-500), xp: increment(100) });
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'users', targetUid), { nfts: arrayUnion({ img, from }) });
+                console.log("NFT sent successfully");
+            } catch (e) {
+                console.error("NFT Error:", e);
+                alert("Ошибка при отправке NFT");
+            }
+        };
+
+        // МГНОВЕННЫЙ ЗВЕЗДОПАД
+        window.transferStars = async (tUid) => {
+            const amt = parseInt(prompt("Сумма передачи S:"));
+            if(isNaN(amt) || amt <= 0 || window.state.profile.stars < amt) return alert("Ошибка суммы");
+            
+            const myUid = window.state.profile.uid;
+            // Закрываем UI мгновенно
+            window.state.starFlow.stage = 'none';
+            render(); 
+            
+            try {
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'users', myUid), { stars: increment(-amt) });
+                await updateDoc(doc(db, 'artifacts', APP_ID, 'users', tUid), { stars: increment(amt) });
+                console.log("Stars transferred");
+            } catch (e) {
+                console.error("Transfer error:", e);
+            }
+        };
+
+        function formatVideoUrl(url) {
+            if (!url) return "";
+            if (url.includes('tiktok.com')) {
+                const parts = url.split('/');
+                const videoId = parts[parts.length - 1].split('?')[0];
+                return `https://www.tiktok.com/embed/v2/${videoId}`;
+            }
+            if (url.includes('youtube.com') || url.includes('youtu.be')) {
+                const videoId = url.includes('watch?v=') ? url.split('v=')[1].split('&')[0] : url.split('/').pop();
+                return `https://www.youtube.com/embed/${videoId}`;
+            }
+            return url;
+        }
+
+        window.postVideo = async () => {
+            const rawUrl = prompt("Вставьте ссылку на видео (TikTok или YouTube):");
+            if(!rawUrl) return;
+            const videoUrl = formatVideoUrl(rawUrl);
+            await addDoc(collection(db, 'artifacts', APP_ID, 'statuses'), {
+                sender: window.state.profile.username, uid: window.state.profile.uid, 
+                avatar: window.state.profile.avatar || null,
+                video: videoUrl, time: Date.now()
+            });
+        };
+
+        window.createNFT = () => {
+            if(window.state.profile.stars < 500) return alert("Нужно 500 S");
+            const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*';
+            f.onchange = (e) => {
+                const file = e.target.files[0];
+                const r = new FileReader();
+                r.onload = () => { window.state.tempNft = r.result; window.state.nftMode = true; render(); };
+                r.readAsDataURL(file);
+            };
+            f.click();
+        };
+
+        window.sendMsg = async () => {
+            const i = document.getElementById('msg-input'); if(!i?.value.trim()) return;
+            let isAnon = window.state.anonMode;
+            if(isAnon && window.state.profile.stars < 50) { alert("Мало S"); isAnon = false; }
+            await addDoc(collection(db, 'artifacts', APP_ID, 'messages'), {
+                from: isAnon ? 'anon' : window.state.profile.uid, to: window.state.chatMode, isGroup: window.state.isGroup,
+                text: i.value.trim(), sender: isAnon ? 'Аноним' : window.state.profile.username, time: Date.now(), isAnon
+            });
+            if(isAnon) await updateDoc(doc(db, 'artifacts', APP_ID, 'users', window.state.profile.uid), { stars: increment(-50) });
+            i.value = '';
+        };
+
+        window.sendMediaMsg = () => {
+            const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*';
+            f.onchange = (e) => {
+                const file = e.target.files[0];
+                const r = new FileReader();
+                r.onload = async () => {
+                    await addDoc(collection(db, 'artifacts', APP_ID, 'messages'), {
+                        from: window.state.profile.uid, to: window.state.chatMode, isGroup: window.state.isGroup,
+                        text: "[Медиа]", media: r.result, sender: window.state.profile.username, time: Date.now()
+                    });
+                };
+                r.readAsDataURL(file);
+            };
+            f.click();
+        };
+
+        window.goBack = () => { window.state.chatMode = null; window.state.viewProfile = null; render(); };
+        window.changeTab = (t) => { window.state.tab = t; window.state.chatMode = null; window.state.viewProfile = null; render(); };
+        window.setSubTab = (st) => { window.state.subTab = st; render(); };
+        window.openChat = (id, group = false) => { window.state.chatMode = id; window.state.isGroup = group; render(); };
+        window.viewUser = (uid) => { window.state.viewProfile = uid; render(); };
+        window.toggleAnon = () => { window.state.anonMode = !window.state.anonMode; render(); };
+        window.toggleConsole = () => document.getElementById('dev-console').classList.toggle('hidden');
+
+        window.buyStyle = async (style) => {
+            if(window.state.profile.stars < 300) return alert("Мало S");
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'users', window.state.profile.uid), { stars: increment(-300), nickStyle: style });
+        };
+        window.changeUsername = async () => {
+            const newNick = prompt("Новый ник (латиница):")?.toLowerCase().trim();
+            if(!newNick || window.state.profile.stars < 500) return;
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'users', window.state.profile.uid), { username: newNick, stars: increment(-500) });
+            localStorage.setItem('haf_nick', newNick);
+        };
+        window.setCustomStatus = async () => {
+            const stat = prompt("Новый статус:");
+            if(!stat || window.state.profile.stars < 100) return;
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'users', window.state.profile.uid), { customStatus: stat, stars: increment(-100) });
+        };
+
+        function renderAuth() {
+            document.getElementById('app').innerHTML = `<div class="h-full flex flex-col items-center justify-center p-8 bg-white"><h1 class="text-5xl font-black italic uppercase mb-12 tracking-tighter">Hafland</h1><div class="w-full max-w-xs space-y-4"><input id="a-nick" class="w-full p-6 rounded-[2rem] border-2 border-gray-50 text-center font-bold outline-none uppercase" placeholder="ЛОГИН"><input id="a-pass" type="password" class="w-full p-6 rounded-[2rem] border-2 border-gray-50 text-center font-bold outline-none" placeholder="ПАРОЛЬ"><button onclick="handleAuth('login')" class="w-full p-6 border-2 border-black rounded-[2rem] font-black uppercase text-sm">Вход</button><button onclick="handleAuth('reg')" class="w-full p-6 bg-black text-white rounded-[2rem] font-black uppercase text-sm">Создать</button></div></div>`;
+        }
+
+        function getNickClass(style) {
+            if(style === 'gold') return 'nick-gold';
+            if(style === 'neon') return 'nick-neon';
+            if(style === 'gradient') return 'nick-gradient';
+            return 'font-black';
+        }
+
+        function render() {
+            const s = window.state; if(!s.profile || !s.initialized) return;
+            const title = s.viewProfile ? 'Профиль' : (s.chatMode ? 'Чат' : s.tab);
+            document.getElementById('app').innerHTML = `
+                <header class="pt-16 px-8 pb-6 flex justify-between items-end border-b border-gray-100 bg-white sticky top-0 z-50">
+                    <div><h2 class="text-2xl font-black italic uppercase">Hafland</h2><p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest">${title}</p></div>
+                    <div class="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-100"><span class="text-[11px] font-black">${s.profile.stars.toLocaleString()}</span><span class="text-[10px] font-black ml-1">S</span></div>
+                </header>
+                <main class="content-scroll bg-white">${renderPage()}</main>
+                ${s.nftMode ? renderNftOverlay() : ''}
+                ${s.starFlow.stage === 'select' ? renderStarOverlay() : ''}
+                <nav class="glass-nav">
+                    ${navBtn('chats', 'message-square', 'Чаты')}${navBtn('feed', 'layers', 'Лента')}${navBtn('market', 'shopping-cart', 'Рынок')}${navBtn('profile', 'user', 'Профиль')}
+                </nav>`;
+            lucide.createIcons();
+            const box = document.getElementById('chat-box'); if(box) box.scrollTop = box.scrollHeight;
+        }
+
+        function navBtn(id, icon, label) {
+            const active = window.state.tab === id;
+            return `<button onclick="changeTab('${id}')" class="flex-1 flex flex-col items-center"><i data-lucide="${icon}" size="20" class="${active?'text-black':'text-gray-300'}"></i><span class="text-[8px] font-black uppercase mt-1 ${active?'text-black':'text-gray-300'}">${label}</span></button>`;
+        }
+
+        function renderPage() {
+            const s = window.state;
+            if(s.viewProfile) {
+                const t = s.users.find(u => u.uid === s.viewProfile); if(!t) return '';
+                return `<div class="p-8 flex flex-col items-center">
+                    <button onclick="goBack()" class="self-start text-[10px] font-black uppercase text-gray-400 mb-8 italic flex items-center gap-1"><i data-lucide="chevron-left" size="14"></i> Назад</button>
+                    <div class="w-32 h-32 rounded-[3.5rem] bg-gray-50 flex items-center justify-center text-5xl font-black mb-4 overflow-hidden shadow-xl border-4 border-white">${t.avatar ? `<img src="${t.avatar}" class="w-full h-full object-cover">` : t.username[0].toUpperCase()}</div>
+                    <h2 class="text-3xl font-black uppercase ${getNickClass(t.nickStyle)}">${t.username}</h2>
+                    <p class="text-[10px] font-bold text-gray-400 mt-1 italic uppercase">${t.customStatus || 'Resident'}</p>
+                    <div class="grid grid-cols-3 gap-2 mt-8 w-full">${(t.nfts || []).map(n => `<div class="nft-item"><img src="${n.img}" class="w-full h-full object-cover"></div>`).join('')}</div>
+                </div>`;
+            }
+            if(s.chatMode) {
+                const f = s.messages.filter(m => s.isGroup ? m.to === s.chatMode : ((m.from===s.profile.uid&&m.to===s.chatMode) || (m.from===s.chatMode&&m.to===s.profile.uid) || (m.from==='anon'&&m.to===s.chatMode)));
+                return `<div class="h-full flex flex-col px-8">
+                    <div class="flex justify-between py-4 border-b border-gray-50">
+                        <button onclick="goBack()" class="text-[10px] font-black uppercase flex items-center gap-1"><i data-lucide="chevron-left" size="14"></i> Назад</button>
+                        <div class="flex gap-4">
+                            <button onclick="toggleAnon()" class="text-[10px] font-black uppercase ${s.anonMode?'text-green-500':'text-gray-300'}">Anon (50S)</button>
+                            ${!s.isGroup ? `<button onclick="viewUser('${s.chatMode}')" class="text-[10px] font-black uppercase text-blue-500">Профиль</button>` : ''}
+                        </div>
+                    </div>
+                    <div id="chat-box" class="flex-1 overflow-y-auto space-y-4 py-6 scrollbar-hide">${f.map(m => `
+                        <div class="flex ${m.from===s.profile.uid?'justify-end':'justify-start'}">
+                            <div class="p-4 text-sm ${m.isAnon?'msg-anon':(m.from===s.profile.uid?'msg-me':'msg-them')}">
+                                ${m.media ? `<img src="${m.media}" class="rounded-xl mb-2 max-w-full">` : ''}
+                                ${m.text}
+                            </div>
+                        </div>`).join('')}</div>
+                    <div class="py-6 flex gap-3">
+                        <button onclick="sendMediaMsg()" class="w-14 h-14 bg-gray-50 rounded-3xl flex items-center justify-center"><i data-lucide="image" size="20"></i></button>
+                        <input id="msg-input" class="flex-1 border-2 border-gray-50 p-5 rounded-3xl outline-none" placeholder="..." onkeypress="if(event.key==='Enter') sendMsg()">
+                        <button onclick="sendMsg()" class="btn-black w-14 h-14 rounded-3xl flex items-center justify-center"><i data-lucide="send" size="20"></i></button>
+                    </div>
+                </div>`;
+            }
+            if(s.tab === 'chats') {
+                return `<div class="p-8 space-y-6">
+                    <div class="flex gap-2 mb-4">
+                        <button onclick="setSubTab('users')" class="flex-1 p-3 rounded-2xl ${s.subTab==='users'?'bg-black text-white':'bg-gray-50 text-gray-400'} text-[10px] font-black uppercase">Люди</button>
+                        <button onclick="setSubTab('groups')" class="flex-1 p-3 rounded-2xl ${s.subTab==='groups'?'bg-black text-white':'bg-gray-50 text-gray-400'} text-[10px] font-black uppercase">Группы</button>
+                    </div>
+                    ${s.subTab === 'groups' ? s.groups.map(g => `<button onclick="openChat('${g.id}', true)" class="w-full flex items-center gap-4 p-6 bg-gray-50 rounded-3xl font-black uppercase text-sm"># ${g.name}</button>`).join('') : s.users.filter(u=>u.uid!==s.profile.uid).map(u => `<button onclick="openChat('${u.uid}')" class="w-full flex items-center gap-5 p-6 rounded-3xl border-2 border-gray-50 bg-white shrink-0"><div class="w-14 h-14 bg-black rounded-2xl flex items-center justify-center font-black text-white overflow-hidden shrink-0">${u.avatar ? `<img src="${u.avatar}" class="w-full h-full object-cover">` : u.username[0].toUpperCase()}</div><div class="text-left"><div class="font-black uppercase text-sm ${getNickClass(u.nickStyle)}">${u.username}</div><div class="text-[9px] font-bold text-gray-300 uppercase">${u.customStatus || 'Resident'}</div></div></button>`).join('')}
+                </div>`;
+            }
+            if(s.tab === 'market') {
+                return `<div class="p-8 space-y-6">
+                    <button onclick="createNFT()" class="w-full p-10 bg-black text-white rounded-[3rem] text-center shadow-xl shadow-black/10"><p class="font-black italic text-2xl">CREATE NFT</p><p class="text-[9px] opacity-50 uppercase mt-2">Стоимость 500 S</p></button>
+                    <button onclick="changeUsername()" class="w-full p-8 bg-gray-50 rounded-[2.5rem] flex items-center justify-between"><span class="font-black uppercase italic">Смена ника (500 S)</span><i data-lucide="edit-3" size="20"></i></button>
+                    <button onclick="setCustomStatus()" class="w-full p-8 bg-gray-50 rounded-[2.5rem] flex items-center justify-between"><span class="font-black uppercase italic">Свой статус (100 S)</span><i data-lucide="smile" size="20"></i></button>
+                    <button onclick="window.state.starFlow.stage='select';render()" class="w-full p-8 bg-gray-50 rounded-[2.5rem] flex items-center justify-between"><span class="font-black uppercase italic">Звездопад</span><i data-lucide="zap" size="20"></i></button>
+                    <div class="p-8 bg-black text-white rounded-[3rem]">
+                        <p class="text-[10px] font-black uppercase mb-4 opacity-50">Стили Ника (300 S)</p>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button onclick="buyStyle('gold')" class="p-3 border border-zinc-700 rounded-xl nick-gold text-[10px]">Gold</button>
+                            <button onclick="buyStyle('neon')" class="p-3 border border-zinc-700 rounded-xl nick-neon text-[10px]">Neon</button>
+                            <button onclick="buyStyle('gradient')" class="p-3 border border-zinc-700 rounded-xl nick-gradient text-[10px]">Aqua</button>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            if(s.tab === 'feed') {
+                return `<div class="p-8 space-y-12">
+                    <button onclick="postVideo()" class="w-full p-8 border-2 border-dashed border-gray-100 rounded-3xl font-black text-gray-300 uppercase text-xs">+ Добавить видео по ссылке</button>
+                    ${s.statuses.map(st => `
+                        <div class="space-y-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-black overflow-hidden">${st.avatar?`<img src="${st.avatar}" class="w-full h-full object-cover">`:''}</div>
+                                <p class="text-[11px] font-black uppercase italic">${st.sender}</p>
+                            </div>
+                            <div class="video-container">
+                                <iframe src="${st.video}" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                            </div>
+                        </div>`).join('')}
+                </div>`;
+            }
+            if(s.tab === 'profile') {
+                return `<div class="p-8 flex flex-col items-center">
+                    <div class="w-32 h-32 rounded-[3.5rem] bg-gray-50 flex items-center justify-center text-5xl font-black mb-8 overflow-hidden border-4 border-white shadow-xl">${s.profile.avatar ? `<img src="${s.profile.avatar}" class="w-full h-full object-cover">` : s.profile.username[0].toUpperCase()}</div>
+                    <h2 class="text-3xl font-black uppercase ${getNickClass(s.profile.nickStyle)}">${s.profile.username}</h2>
+                    <p class="text-xs font-bold text-gray-400 mt-2 uppercase italic">${s.profile.customStatus || 'Resident'}</p>
+                    <div class="grid grid-cols-3 gap-2 mt-8 w-full">${(s.profile.nfts || []).map(n => `<div class="nft-item"><img src="${n.img}" class="w-full h-full object-cover"></div>`).join('')}</div>
+                </div>`;
+            }
+            return '';
+        }
+
+        function renderNftOverlay() {
+            return `<div class="modal-overlay" style="z-index: 5000;"><div class="bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl text-center"><h3 class="font-black uppercase mb-6 italic">Выберите получателя</h3><div class="max-h-64 overflow-y-auto space-y-2">${window.state.users.map(u => `<button onclick="confirmNFT('${u.uid}')" class="w-full p-4 bg-gray-50 rounded-2xl font-black uppercase text-[10px] flex justify-between"><span>${u.username}</span></button>`).join('')}</div><button onclick="window.state.nftMode=false;render()" class="w-full text-[10px] font-bold mt-6 uppercase text-gray-300">ОТМЕНА</button></div></div>`;
+        }
+
+        function renderStarOverlay() {
+            return `<div class="modal-overlay" style="z-index: 5000;"><div class="bg-white w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl text-center"><h3 class="font-black uppercase mb-6 italic">Передать S</h3><div class="max-h-64 overflow-y-auto space-y-2">${window.state.users.filter(u=>u.uid!==window.state.profile.uid).map(u => `<button onclick="transferStars('${u.uid}')" class="w-full p-4 bg-gray-50 rounded-2xl font-black uppercase text-xs flex justify-between"><span>${u.username}</span></button>`).join('')}</div><button onclick="window.state.starFlow.stage='none';render()" class="w-full text-[10px] font-bold mt-6 uppercase text-gray-300">ЗАКРЫТЬ</button></div></div>`;
+        }
+    </script>
+</body>
+</html>
+
