@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Hafland Evolution 3.4</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #ffffff; --text: #000000; --border: #f0f0f0; --glass: rgba(255, 255, 255, 0.95); }
+        .dark { --bg: #0a0a0a; --text: #ffffff; --border: #222222; --glass: rgba(10, 10, 10, 0.95); }
+        
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding: 0; overflow: hidden; height: 100vh; -webkit-tap-highlight-color: transparent; }
+        
+        .glass-nav {
+            background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--border);
+            z-index: 100; position: fixed; bottom: 0; left: 0; right: 0;
+            height: calc(75px + env(safe-area-inset-bottom)); display: flex; justify-content: space-around; align-items: center;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        .content-scroll { height: calc(100vh - 150px); overflow-y: auto; padding-bottom: 100px; }
+        .content-scroll::-webkit-scrollbar { display: none; }
+        
+        .msg-me { background: var(--text); color: var(--bg); border-radius: 18px 18px 4px 18px; }
+        .msg-them { background: #f3f3f3; color: #000; border-radius: 18px 18px 18px 4px; }
+        .dark .msg-them { background: #1a1a1a; color: #fff; }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        
+        .nick-gold { color: #ffd700; font-weight: 800; }
+        .btn-black { background: var(--text); color: var(--bg); }
+    </style>
+</head>
+<body class="light">
+    <div id="app" class="h-full flex flex-col relative"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc, increment, arrayUnion } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAkgC4melkEcj0pDywonPG3aAeE3vACoF0",
+            authDomain: "hafland-c8dc3.firebaseapp.com",
+            projectId: "hafland-c8dc3",
+            storageBucket: "hafland-c8dc3.firebasestorage.app",
+            messagingSenderId: "163991622474",
+            appId: "1:163991622474:web:06a7357e295c9a98b327b3"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const APP_ID = "hafland_v3_stable"; 
+
+        window.state = {
+            user: null, profile: null, tab: 'chats', chatMode: null,
+            messages: [], users: [], initialized: false, darkMode: false
+        };
+
+        onAuthStateChanged(auth, async (u) => {
+            if (u) {
+                window.state.user = u;
+                const savedNick = localStorage.getItem('haf_nick');
+                const savedPass = localStorage.getItem('haf_pass');
+                if(savedNick && savedPass) await autoLogin(savedNick, savedPass);
+                else { window.state.initialized = true; renderAuth(); }
+            } else { await signInAnonymously(auth); }
+        });
+
+        async function autoLogin(nick, pass) {
+            try {
+                const regRef = doc(db, 'artifacts', APP_ID, 'registry', nick.toLowerCase());
+                const regSnap = await getDoc(regRef);
+                if (regSnap.exists() && regSnap.data().pass === pass) initListeners(regSnap.data().uid);
+                else { window.state.initialized = true; renderAuth(); }
+            } catch(e) { window.state.initialized = true; renderAuth(); }
+        }
+
+        function initListeners(uid) {
+            onSnapshot(doc(db, 'artifacts', APP_ID, 'users', uid), (s) => {
+                if (s.exists()) { 
+                    window.state.profile = s.data(); 
+                    window.state.darkMode = s.data().darkMode || false;
+                    document.body.className = window.state.darkMode ? 'dark' : 'light';
+                    window.state.initialized = true; render(); 
+                }
+            });
+            onSnapshot(collection(db, 'artifacts', APP_ID, 'users'), (s) => {
+                window.state.users = s.docs.map(d => d.data()); render();
+            });
+            onSnapshot(collection(db, 'artifacts', APP_ID, 'messages'), (s) => {
+                window.state.messages = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => a.time - b.time); render();
+            });
+        }
+
+        window.handleAuth = async (mode) => {
+            const nick = document.getElementById('a-nick').value.trim().toLowerCase();
+            const pass = document.getElementById('a-pass').value.trim();
+            if(!nick || !pass) return;
+            try {
+                const regRef = doc(db, 'artifacts', APP_ID, 'registry', nick);
+                const regSnap = await getDoc(regRef);
+                if (mode === 'reg') {
+                    if (regSnap.exists()) return alert("Ник занят");
+                    const profile = { 
+                        uid: auth.currentUser.uid, username: nick, pass, stars: 100, 
+                        premium: false, nickStyle: 'normal', customStatus: '', level: 1, xp: 0, darkMode: false
+                    };
+                    await setDoc(regRef, { uid: auth.currentUser.uid, pass });
+                    await setDoc(doc(db, 'artifacts', APP_ID, 'users', auth.currentUser.uid), profile);
+                }
+                localStorage.setItem('haf_nick', nick); localStorage.setItem('haf_pass', pass);
+                initListeners(auth.currentUser.uid);
+            } catch(e) { alert("Ошибка доступа"); }
+        };
+
+        window.sendMsg = async () => {
+            const i = document.getElementById('msg-input'); if(!i?.value.trim()) return;
+            await addDoc(collection(db, 'artifacts', APP_ID, 'messages'), {
+                from: window.state.profile.uid, to: window.state.chatMode,
+                text: i.value.trim(), sender: window.state.profile.username, time: Date.now()
+            });
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'users', window.state.profile.uid), { xp: increment(5) });
+            i.value = '';
+        };
+
+        window.buyPremium = async () => {
+            if(window.state.profile.stars < 500) return alert("Недостаточно S");
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'users', window.state.profile.uid), { stars: increment(-500), premium: true });
+            alert("Premium активирован!");
+        };
+
+        window.toggleDarkMode = async () => {
+            await updateDoc(doc(db, 'artifacts', APP_ID, 'users', window.state.profile.uid), { darkMode: !window.state.darkMode });
+        };
+
+        window.changeTab = (t) => { window.state.tab = t; window.state.chatMode = null; render(); };
+        window.openChat = (id) => { window.state.chatMode = id; render(); };
+
+        function renderAuth() {
+            document.getElementById('app').innerHTML = `<div class="h-full flex flex-col items-center justify-center p-8"><h1 class="text-3xl font-black italic mb-8">HAFLAND 3.4</h1><div class="w-full max-w-xs space-y-3"><input id="a-nick" class="w-full p-4 rounded-2xl border bg-transparent outline-none" placeholder="НИК"><input id="a-pass" type="password" class="w-full p-4 rounded-2xl border bg-transparent outline-none" placeholder="ПАРОЛЬ"><button onclick="handleAuth('login')" class="w-full p-4 border border-black rounded-2xl font-bold">ВХОД</button><button onclick="handleAuth('reg')" class="w-full p-4 bg-black text-white rounded-2xl font-bold">РЕГИСТРАЦИЯ</button></div></div>`;
+        }
+
+        function render() {
+            const s = window.state; if(!s.profile || !s.initialized) return;
+            document.getElementById('app').innerHTML = `
+                <header class="pt-12 px-6 pb-4 flex justify-between items-center border-b border-gray-100">
+                    <h2 class="text-xl font-black uppercase italic">${s.tab}</h2>
+                    <div class="font-bold text-xs">${s.profile.stars} S</div>
+                </header>
+                <main class="content-scroll">${renderPage()}</main>
+                <nav class="glass-nav">
+                    ${navBtn('chats', 'message-circle')}${navBtn('market', 'shopping-cart')}${navBtn('profile', 'user')}
+                </nav>`;
+            lucide.createIcons();
+            const box = document.getElementById('chat-box'); if(box) box.scrollTop = box.scrollHeight;
+        }
+
+        function navBtn(id, icon) {
+            const active = window.state.tab === id;
+            return `<button onclick="changeTab('${id}')" class="${active?'opacity-100':'opacity-30'}"><i data-lucide="${icon}"></i></button>`;
+        }
+
+        function renderPage() {
+            const s = window.state;
+            if(s.chatMode) {
+                const f = s.messages.filter(m => (m.from===s.profile.uid&&m.to===s.chatMode) || (m.from===s.chatMode&&m.to===s.profile.uid));
+                return `<div class="p-4 h-full flex flex-col">
+                    <button onclick="window.state.chatMode=null;render()" class="text-xs font-bold mb-4">← Назад</button>
+                    <div id="chat-box" class="flex-1 overflow-y-auto space-y-2 mb-4">
+                        ${f.map(m => `<div class="flex ${m.from===s.profile.uid?'justify-end':'justify-start'}"><div class="p-3 text-sm ${m.from===s.profile.uid?'msg-me':'msg-them'} max-w-[80%]">${m.text}</div></div>`).join('')}
+                    </div>
+                    <div class="flex gap-2">
+                        <input id="msg-input" class="flex-1 bg-gray-100 dark:bg-zinc-900 p-4 rounded-xl outline-none" placeholder="Текст..." onkeypress="if(event.key==='Enter') sendMsg()">
+                        <button onclick="sendMsg()" class="w-12 h-12 btn-black rounded-xl flex items-center justify-center">↑</button>
+                    </div>
+                </div>`;
+            }
+            if(s.tab === 'chats') {
+                return `<div class="p-4 space-y-2">${s.users.filter(u=>u.uid!==s.profile.uid).map(u => `<div onclick="openChat('${u.uid}')" class="p-4 border rounded-xl flex justify-between items-center"><span class="font-bold">${u.username}</span><span class="text-[10px] opacity-30">LVL ${u.level}</span></div>`).join('')}</div>`;
+            }
+            if(s.tab === 'market') {
+                return `<div class="p-6 space-y-4">
+                    <div class="p-4 border rounded-2xl flex justify-between items-center">
+                        <div><p class="font-bold">Hafland Premium</p><p class="text-[10px] opacity-40">Возможности v3.4</p></div>
+                        <button onclick="buyPremium()" class="bg-black text-white px-4 py-2 rounded-lg text-xs font-bold">500 S</button>
+                    </div>
+                </div>`;
+            }
+            if(s.tab === 'profile') {
+                return `<div class="p-8 text-center">
+                    <div class="w-20 h-20 bg-gray-100 mx-auto rounded-full mb-4 flex items-center justify-center text-2xl font-black">${s.profile.username[0].toUpperCase()}</div>
+                    <h3 class="font-black text-xl">${s.profile.username}</h3>
+                    <p class="text-xs opacity-40 mb-6">LVL ${s.profile.level} • XP ${s.profile.xp}</p>
+                    <div class="space-y-2">
+                        <button onclick="toggleDarkMode()" class="w-full p-4 border rounded-xl text-xs font-bold uppercase">Сменить тему</button>
+                        <button onclick="localStorage.clear(); location.reload()" class="w-full p-4 text-red-500 text-xs font-bold">ВЫХОД</button>
+                    </div>
+                </div>`;
+            }
+            return '';
+        }
+    </script>
+</body>
+</html>
+
+
