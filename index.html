@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hafland X</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-dark: #1a222c;
+            --bg-card: #242f3d;
+            --accent: #50a2e9;
+        }
+        body {
+            background-color: var(--bg-dark);
+            color: white;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none; /* Чтобы долгое нажатие не выделяло текст */
+        }
+        .tab-content { display: none; height: calc(100vh - 70px); overflow-y: auto; }
+        .tab-content.active { display: block; }
+        .nav-item.active { color: var(--accent); }
+        
+        /* Стилизация скролла */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #3e4b5b; border-radius: 10px; }
+
+        /* Анимации */
+        .page-transition { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+        /* Переключатель в настройках */
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #3e4b5b; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        /* Контекстное меню */
+        #context-menu { display: none; position: fixed; z-index: 100; background: #242f3d; border-radius: 12px; min-width: 160px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+
+    <div id="auth-screen" class="fixed inset-0 z-[100] bg-[#1a222c] flex flex-col items-center justify-center p-8">
+        <h1 class="text-4xl font-bold text-[#50a2e9] mb-10 tracking-tight">Hafland X</h1>
+        <div class="w-full max-w-sm space-y-4">
+            <input type="text" id="auth-nick" placeholder="Ник" class="w-full bg-[#242f3d] rounded-2xl p-4 outline-none focus:ring-2 ring-[#50a2e9]">
+            <input type="password" id="auth-pass" placeholder="Пароль" class="w-full bg-[#242f3d] rounded-2xl p-4 outline-none focus:ring-2 ring-[#50a2e9]">
+            
+            <div id="reg-agreement" class="flex items-start gap-3 p-2">
+                <input type="checkbox" id="terms-check" class="mt-1 w-5 h-5 accent-[#50a2e9]">
+                <p class="text-[11px] text-gray-400 leading-tight">Я соглашаюсь с тем, что Hafland X — это независимая площадка. Сервис не несет ответственности за контент сообщений.</p>
+            </div>
+
+            <button onclick="handleAuth()" id="auth-btn" class="w-full bg-[#50a2e9] py-4 rounded-2xl font-bold text-lg active:scale-95 transition-all">Регистрация</button>
+            <p id="toggle-text" class="text-center text-sm text-gray-400 cursor-pointer" onclick="toggleAuthMode()">Уже зарегистрированы? <span class="text-[#50a2e9]">Войти</span></p>
+        </div>
+    </div>
+
+    <main id="app-main" class="hidden h-screen">
+        
+        <section id="chats" class="tab-content active p-4 page-transition">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-black text-[#50a2e9]">Hafland X</h2>
+                <i data-lucide="more-vertical" class="cursor-pointer"></i>
+            </div>
+            <div class="relative mb-6">
+                <i data-lucide="search" class="absolute left-4 top-3.5 text-gray-500 w-5 h-5"></i>
+                <input type="text" placeholder="Поиск чатов" class="w-full bg-[#242f3d] rounded-2xl py-3.5 pl-12 pr-4 outline-none">
+            </div>
+            
+            <div id="chats-list" class="space-y-1">
+                <div class="flex items-center p-3 hover:bg-[#242f3d] rounded-2xl cursor-pointer" onclick="openArchive()">
+                    <div class="w-12 h-12 bg-blue-600/20 rounded-full flex items-center justify-center mr-4 text-[#50a2e9]">
+                        <i data-lucide="archive" class="w-6"></i>
+                    </div>
+                    <span class="font-bold">Архив</span>
+                </div>
+                </div>
+
+            <button class="fixed bottom-24 right-6 bg-[#50a2e9] w-14 h-14 rounded-full shadow-xl flex items-center justify-center active:rotate-90 transition-all">
+                <i data-lucide="plus" class="text-white"></i>
+            </button>
+        </section>
+
+        <section id="contacts" class="tab-content p-4 page-transition">
+            <h2 class="text-xl font-bold mb-4">Люди</h2>
+            <input type="text" placeholder="Найти человека по нику..." class="w-full bg-[#242f3d] rounded-xl p-3 mb-4 outline-none">
+            <div id="users-global" class="space-y-4">
+                <p class="text-center text-gray-500 text-sm mt-10">Начните поиск...</p>
+            </div>
+        </section>
+
+        <section id="settings" class="tab-content p-6 page-transition">
+            <h2 class="text-xl font-bold mb-6">Настройки</h2>
+            <div class="space-y-4">
+                <div class="flex items-center justify-between bg-[#242f3d] p-4 rounded-2xl">
+                    <div class="flex items-center gap-3"><i data-lucide="sun" class="w-5"></i><span>Светлая тема</span></div>
+                    <label class="switch"><input type="checkbox" onchange="toggleTheme()"><span class="slider"></span></label>
+                </div>
+                <div class="flex items-center justify-between bg-[#242f3d] p-4 rounded-2xl">
+                    <div class="flex items-center gap-3"><i data-lucide="eye-off" class="w-5"></i><span>Инкогнито</span></div>
+                    <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+                </div>
+                <div class="bg-[#242f3d] p-4 rounded-2xl">
+                    <p class="text-xs text-gray-500 mb-2 uppercase tracking-widest">Язык</p>
+                    <select class="w-full bg-transparent outline-none text-white cursor-pointer">
+                        <option class="bg-[#242f3d]">Русский</option>
+                        <option class="bg-[#242f3d]">English</option>
+                        <option class="bg-[#242f3d]">Español</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <section id="profile" class="tab-content p-6 page-transition">
+            <div class="flex flex-col items-center mt-6">
+                <div id="user-avatar" class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 mb-4 border-4 border-[#242f3d] shadow-2xl overflow-hidden">
+                    <img id="avatar-img" src="https://api.dicebear.com/7.x/bottts/svg?seed=Hafland" alt="avatar">
+                </div>
+                <h3 id="display-nick" class="text-2xl font-bold mb-1">Никнейм</h3>
+                <p id="display-desc" class="text-gray-500 text-sm mb-6 text-center">Описание профиля отсутствует</p>
+                
+                <div class="w-full space-y-3">
+                    <button onclick="editProfile()" class="w-full bg-[#242f3d] py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-[#2d3a4b]">
+                        <i data-lucide="edit-3" class="w-4"></i> Изменить профиль
+                    </button>
+                    <button onclick="logout()" class="w-full bg-red-500/10 text-red-500 py-3 rounded-xl font-bold">Выйти</button>
+                    <button class="w-full py-2 text-xs text-gray-600 uppercase">Удалить аккаунт</button>
+                </div>
+            </div>
+        </section>
+
+        <nav class="fixed bottom-0 w-full bg-[#1a222c]/90 backdrop-blur-lg border-t border-gray-800 flex justify-around py-3 px-2">
+            <div onclick="showTab('chats')" class="nav-item active flex flex-col items-center cursor-pointer">
+                <i data-lucide="message-circle" class="w-6"></i><span class="text-[10px] mt-1">Чаты</span>
+            </div>
+            <div onclick="showTab('contacts')" class="nav-item flex flex-col items-center cursor-pointer">
+                <i data-lucide="users" class="w-6"></i><span class="text-[10px] mt-1">Люди</span>
+            </div>
+            <div onclick="showTab('settings')" class="nav-item flex flex-col items-center cursor-pointer">
+                <i data-lucide="settings" class="w-6"></i><span class="text-[10px] mt-1">Опции</span>
+            </div>
+            <div onclick="showTab('profile')" class="nav-item flex flex-col items-center cursor-pointer">
+                <i data-lucide="user" class="w-6"></i><span class="text-[10px] mt-1">Профиль</span>
+            </div>
+        </nav>
+    </main>
+
+    <div id="context-menu">
+        <div class="p-4 hover:bg-gray-700/50 rounded-t-12 cursor-pointer flex gap-3"><i data-lucide="lock" class="w-4"></i> Заблокировать</div>
+        <div class="p-4 hover:bg-gray-700/50 cursor-pointer flex gap-3"><i data-lucide="archive" class="w-4"></i> В архив</div>
+        <div class="p-4 hover:bg-gray-700/50 rounded-b-12 cursor-pointer border-t border-gray-700 flex gap-3 text-[#50a2e9]"><i data-lucide="pin" class="w-4"></i> Закрепить</div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        // Здесь можно импортировать auth и firestore
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCLn2gSJqs9JBfbWS2Z2PSl_V_qZxNsW-k",
+            authDomain: "hafland-x-66cdc.firebaseapp.com",
+            projectId: "hafland-x-66cdc",
+            storageBucket: "hafland-x-66cdc.firebasestorage.app",
+            messagingSenderId: "1007892951941",
+            appId: "1:1007892951941:web:692984898e47747307caec"
+        };
+        const app = initializeApp(firebaseConfig);
+
+        // --- ЛОГИКА ИНТЕРФЕЙСА ---
+        let isLoginMode = false; // По умолчанию регистрация, как ты просил
+
+        window.toggleAuthMode = () => {
+            isLoginMode = !isLoginMode;
+            const btn = document.getElementById('auth-btn');
+            const toggleTxt = document.getElementById('toggle-text');
+            const agreement = document.getElementById('reg-agreement');
+
+            if (isLoginMode) {
+                btn.innerText = 'Войти';
+                toggleTxt.innerHTML = 'Не зарегистрированы? <span class="text-[#50a2e9]">Зарегистрироваться</span>';
+                agreement.style.display = 'none';
+            } else {
+                btn.innerText = 'Регистрация';
+                toggleTxt.innerHTML = 'Уже зарегистрированы? <span class="text-[#50a2e9]">Войти</span>';
+                agreement.style.display = 'flex';
+            }
+        };
+
+        window.handleAuth = () => {
+            const nick = document.getElementById('auth-nick').value;
+            if(!nick) return alert("Введите ник");
+            
+            // Имитация успешного входа
+            document.getElementById('auth-screen').classList.add('hidden');
+            document.getElementById('app-main').classList.remove('hidden');
+            document.getElementById('display-nick').innerText = nick;
+            // Генерируем аватарку по нику
+            document.getElementById('avatar-img').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${nick}`;
+        };
+
+        window.showTab = (tabId) => {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        };
+
+        // Контекстное меню при долгом нажатии
+        window.oncontextmenu = function(event) {
+            event.preventDefault();
+            const menu = document.getElementById('context-menu');
+            menu.style.display = 'block';
+            menu.style.left = event.pageX + "px";
+            menu.style.top = event.pageY + "px";
+        };
+
+        window.onclick = function() {
+            document.getElementById('context-menu').style.display = 'none';
+        };
+
+        window.logout = () => location.reload();
+
+        // Инициализация иконок
+        lucide.createIcons();
+    </script>
+</body>
+</html>
+
