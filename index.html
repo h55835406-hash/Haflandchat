@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hafland X</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background-color: #121b2b; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        .app-container { height: 100vh; display: flex; flex-direction: column; }
+        .content-area { flex: 1; overflow-y: auto; padding-bottom: 80px; }
+        .nav-bar { background: #1a273a; border-top: 1px solid #2d3d5a; position: fixed; bottom: 0; width: 100%; display: flex; justify-content: space-around; padding: 12px 0; z-index: 50; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: #7f8c8d; cursor: pointer; transition: 0.2s; }
+        .nav-item.active { color: #3498db; }
+        .chat-card { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #1e2d44; cursor: pointer; active: background-color: #1a273a; }
+        .avatar { width: 48px; height: 48px; border-radius: 50%; background: #2d3d5a; margin-right: 12px; object-fit: cover; }
+        .hidden { display: none !important; }
+        input { background: #1e2d44; border: 1px solid #2d3d5a; color: white; border-radius: 10px; padding: 12px; width: 100%; outline: none; }
+        input:focus { border-color: #3498db; }
+        .btn-primary { background: #3498db; color: white; padding: 12px; border-radius: 10px; font-weight: 600; width: 100%; transition: 0.3s; }
+        .btn-primary:active { transform: scale(0.98); opacity: 0.9; }
+        
+        /* Стили сообщений */
+        .msg { margin-bottom: 10px; max-width: 80%; padding: 10px 14px; border-radius: 15px; font-size: 15px; position: relative; }
+        .msg-me { background: #3498db; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .msg-them { background: #1e2d44; align-self: flex-start; border-bottom-left-radius: 2px; }
+    </style>
+</head>
+<body>
+
+<div id="auth-screen" class="app-container items-center justify-center p-8">
+    <h1 class="text-5xl font-bold text-blue-500 mb-2 tracking-tight">Hafland X</h1>
+    <p class="text-gray-400 mb-10 text-center">Полностью анонимный мессенджер</p>
+    
+    <div class="w-full max-w-sm space-y-4">
+        <input type="text" id="reg-nick" placeholder="Придумайте никнейм">
+        <div class="flex items-start space-x-3 text-sm text-gray-400 px-1">
+            <input type="checkbox" id="rules-check" class="mt-1 w-4 h-4 rounded">
+            <span>Я понимаю, что при очистке кэша браузера доступ к аккаунту будет утерян.</span>
+        </div>
+        <button onclick="handleRegister()" class="btn-primary">Войти анонимно</button>
+        <p id="auth-error" class="text-red-400 text-sm text-center font-medium"></p>
+    </div>
+</div>
+
+<div id="main-app" class="app-container hidden">
+    <div class="p-4 flex justify-between items-center bg-[#1a273a] shadow-md">
+        <h2 id="view-title" class="text-xl font-bold text-blue-400">Чаты</h2>
+        <div class="flex space-x-4">
+            <i class="fas fa-search text-gray-400"></i>
+            <i class="fas fa-ellipsis-v text-gray-400"></i>
+        </div>
+    </div>
+
+    <div id="chats-view" class="content-area">
+        <div class="chat-card opacity-60">
+            <div class="avatar flex items-center justify-center bg-gray-700 text-xl"><i class="fas fa-archive"></i></div>
+            <div class="flex-1">
+                <div class="font-bold">Архив</div>
+                <div class="text-xs text-gray-500">Скрытые диалоги</div>
+            </div>
+        </div>
+        <div id="chats-list">
+            <div class="p-10 text-center text-gray-500 text-sm">У вас пока нет активных чатов.<br>Найдите кого-нибудь в Контактах!</div>
+        </div>
+    </div>
+
+    <div id="contacts-view" class="content-area hidden">
+        <div class="p-4">
+            <div class="relative">
+                <input type="text" id="search-nick" placeholder="Поиск по нику..." class="pr-12">
+                <button onclick="searchUser()" class="absolute right-3 top-3 text-blue-500"><i class="fas fa-search"></i></button>
+            </div>
+        </div>
+        <div id="search-results"></div>
+    </div>
+
+    <div id="settings-view" class="content-area hidden p-6 space-y-6">
+        <div class="bg-[#1a273a] rounded-xl p-4 space-y-4">
+            <div class="flex justify-between items-center">
+                <span class="font-medium">Режим "Инкогнито"</span>
+                <input type="checkbox" id="incognito-toggle" class="w-5 h-5">
+            </div>
+            <div class="flex justify-between items-center border-t border-gray-700 pt-4">
+                <span class="font-medium">Темная тема</span>
+                <div class="text-blue-500 font-bold">ВКЛ</div>
+            </div>
+        </div>
+        <button onclick="auth.signOut(); location.reload();" class="w-full p-4 text-red-400 bg-red-900/20 rounded-xl font-bold">Выйти из системы</button>
+    </div>
+
+    <div id="chat-window" class="fixed inset-0 bg-[#121b2b] z-[60] hidden flex flex-col">
+        <div class="p-4 bg-[#1a273a] flex items-center shadow-lg">
+            <button onclick="closeChat()" class="mr-4 text-xl"><i class="fas fa-arrow-left"></i></button>
+            <img id="chat-user-avatar" src="" class="w-10 h-10 rounded-full mr-3 hidden">
+            <div id="chat-user-name" class="font-bold text-lg">Загрузка...</div>
+        </div>
+        <div id="messages-list" class="flex-1 overflow-y-auto p-4 flex flex-col"></div>
+        <div class="p-3 bg-[#1a273a] flex items-center gap-3">
+            <button class="text-gray-400 text-xl"><i class="fas fa-paperclip"></i></button>
+            <input type="text" id="msg-input" placeholder="Ваше сообщение..." class="flex-1 border-none bg-[#2d3d5a]">
+            <button onclick="sendMessage()" class="bg-blue-500 w-10 h-10 rounded-full flex items-center justify-center"><i class="fas fa-paper-plane text-sm"></i></button>
+        </div>
+    </div>
+
+    <nav class="nav-bar">
+        <div class="nav-item active" onclick="switchTab('chats', this, 'Чаты')"><i class="fas fa-comment-dots text-2xl"></i><span>Чаты</span></div>
+        <div class="nav-item" onclick="switchTab('contacts', this, 'Контакты')"><i class="fas fa-address-book text-2xl"></i><span>Контакты</span></div>
+        <div class="nav-item" onclick="switchTab('settings', this, 'Настройки')"><i class="fas fa-user-cog text-2xl"></i><span>Профиль</span></div>
+    </nav>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, onSnapshot, serverTimestamp, orderBy } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+    // ТВОИ КЛЮЧИ ПОДКЛЮЧЕНЫ
+    const firebaseConfig = {
+        apiKey: "AIzaSyCLn2gSJqs9JBfbWS2Z2PSl_V_qZxNsW-k",
+        authDomain: "hafland-x-66cdc.firebaseapp.com",
+        projectId: "hafland-x-66cdc",
+        storageBucket: "hafland-x-66cdc.firebasestorage.app",
+        messagingSenderId: "1007892951941",
+        appId: "1:1007892951941:web:692984898e47747307caec"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+    let activeChatId = null;
+
+    // --- АВТОРИЗАЦИЯ ---
+    window.handleRegister = async () => {
+        const nick = document.getElementById('reg-nick').value.trim();
+        const checked = document.getElementById('rules-check').checked;
+        const err = document.getElementById('auth-error');
+        
+        if (nick.length < 3) return err.innerText = "Ник слишком короткий";
+        if (!checked) return err.innerText = "Примите условия";
+
+        try {
+            // Проверка ника
+            const nameRef = doc(db, "usernames", nick.toLowerCase());
+            const nameSnap = await getDoc(nameRef);
+            if (nameSnap.exists()) return err.innerText = "Этот ник уже занят";
+
+            const cred = await signInAnonymously(auth);
+            const uid = cred.user.uid;
+
+            const userData = {
+                nick: nick,
+                isIncognito: false,
+                avatar: `https://api.dicebear.com/7.x/identicon/svg?seed=${nick}`
+            };
+
+            await setDoc(doc(db, "users", uid), userData);
+            await setDoc(nameRef, { uid: uid });
+            
+            // Перезагрузка для инициализации
+            location.reload();
+        } catch (e) { 
+            console.error(e);
+            err.innerText = "Ошибка сервера. Проверьте Rules в Firebase.";
+        }
+    };
+
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (userDoc.exists()) {
+                currentUser = { id: user.uid, ...userDoc.data() };
+                document.getElementById('auth-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                listenToChats();
+            }
+        }
+    });
+
+    // --- НАВИГАЦИЯ ---
+    window.switchTab = (tab, el, title) => {
+        document.querySelectorAll('.content-area').forEach(v => v.classList.add('hidden'));
+        document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
+        document.getElementById(`${tab}-view`).classList.remove('hidden');
+        document.getElementById('view-title').innerText = title;
+        el.classList.add('active');
+    };
+
+    // --- ПОИСК ЮЗЕРОВ ---
+    window.searchUser = async () => {
+        const nick = document.getElementById('search-nick').value.trim();
+        if(!nick) return;
+        
+        const q = query(collection(db, "users"), where("nick", "==", nick));
+        const snap = await getDocs(q);
+        const resDiv = document.getElementById('search-results');
+        resDiv.innerHTML = "";
+        
+        if(snap.empty) resDiv.innerHTML = "<p class='p-4 text-gray-500'>Пользователь не найден</p>";
+
+        snap.forEach(uDoc => {
+            const data = uDoc.data();
+            if (data.isIncognito && uDoc.id !== currentUser.id) return;
+            
+            resDiv.innerHTML += `
+                <div class="chat-card" onclick="openDirectChat('${uDoc.id}', '${data.nick}', '${data.avatar}')">
+                    <img src="${data.avatar}" class="avatar">
+                    <div class="font-bold">${data.nick} ${uDoc.id === currentUser.id ? '(Вы)' : ''}</div>
+                </div>`;
+        });
+    };
+
+    // --- ЛОГИКА ЧАТА ---
+    window.openDirectChat = async (targetId, targetNick, targetAvatar) => {
+        const chatId = [currentUser.id, targetId].sort().join("_");
+        activeChatId = chatId;
+        
+        document.getElementById('chat-user-name').innerText = targetNick;
+        document.getElementById('chat-user-avatar').src = targetAvatar;
+        document.getElementById('chat-user-avatar').classList.remove('hidden');
+        document.getElementById('chat-window').classList.remove('hidden');
+        
+        // Создаем чат в базе, если его нет
+        await setDoc(doc(db, "chats", chatId), {
+            members: [currentUser.id, targetId],
+            lastUpdate: serverTimestamp(),
+            nicks: { [currentUser.id]: currentUser.nick, [targetId]: targetNick }
+        }, { merge: true });
+
+        listenMessages(chatId);
+    };
+
+    window.closeChat = () => {
+        document.getElementById('chat-window').classList.add('hidden');
+        activeChatId = null;
+    };
+
+    window.sendMessage = async () => {
+        const input = document.getElementById('msg-input');
+        const text = input.value.trim();
+        if (!text || !activeChatId) return;
+
+        input.value = "";
+        await addDoc(collection(db, "chats", activeChatId, "messages"), {
+            sender: currentUser.id,
+            text: text,
+            time: serverTimestamp()
+        });
+        
+        await setDoc(doc(db, "chats", activeChatId), { lastUpdate: serverTimestamp() }, { merge: true });
+    };
+
+    function listenMessages(chatId) {
+        const q = query(collection(db, "chats", chatId, "messages"), orderBy("time", "asc"));
+        onSnapshot(q, (snap) => {
+            const list = document.getElementById('messages-list');
+            list.innerHTML = "";
+            snap.forEach(m => {
+                const isMe = m.data().sender === currentUser.id;
+                const div = document.createElement('div');
+                div.className = `msg ${isMe ? 'msg-me' : 'msg-them'}`;
+                div.innerText = m.data().text;
+                list.appendChild(div);
+            });
+            list.scrollTop = list.scrollHeight;
+        });
+    }
+
+    function listenToChats() {
+        const q = query(collection(db, "chats"), where("members", "array-contains", currentUser.id), orderBy("lastUpdate", "desc"));
+        onSnapshot(q, (snap) => {
+            const list = document.getElementById('chats-list');
+            if(snap.empty) return;
+            list.innerHTML = "";
+            snap.forEach(d => {
+                const data = d.data();
+                const targetId = data.members.find(id => id !== currentUser.id);
+                const targetNick = data.nicks[targetId] || "Аноним";
+                
+                list.innerHTML += `
+                    <div class="chat-card" onclick="openDirectChat('${targetId}', '${targetNick}', 'https://api.dicebear.com/7.x/identicon/svg?seed=${targetNick}')">
+                        <img src="https://api.dicebear.com/7.x/identicon/svg?seed=${targetNick}" class="avatar">
+                        <div class="flex-1">
+                            <div class="font-bold">${targetNick}</div>
+                            <div class="text-xs text-gray-500">Нажмите, чтобы открыть переписку</div>
+                        </div>
+                    </div>`;
+            });
+        });
+    }
+</script>
+</body>
+</html>
+
